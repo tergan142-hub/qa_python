@@ -2,16 +2,6 @@ import pytest
 from main import BooksCollector
 
 class TestBooksCollector:
-    @pytest.fixture
-    def collector(self):
-        return BooksCollector()
-    def _add_book_with_genre(self, collector, book_name, genre):
-        collector.add_new_book(book_name)
-        collector.set_book_genre(book_name, genre)
-    def _add_books_for_testing(self, collector):
-        books = {"Метро 2033": "Фантастика", "Дюна": "Фантастика", "Большой Куш": "Комедия"}
-        for name, genre in books.items():
-            self.add_book_with_genre(collector, name, genre)
 
     #Тесты для add_new_book
     @pytest.mark.parametrize("book_name", ["Война и Мир", "Мастер и Маргарита", "Гарри Поттер и филосовский камень", "А" * 40])
@@ -48,11 +38,23 @@ class TestBooksCollector:
         assert "Наскальная нахальность" not in collector.books_genre
 
     @pytest.mark.parametrize("genre", ["Неизвестный жанр", "Драма", "Триллер", "Роман"])
-    def test_set_book_genre_invalid_genre(self, collector, genre):
-        book_name = "Тест книга"
-        collector.add_new_book_genre(book_name)
-        collector.set_book_genre(book_name, genre)
-        assert collector.get_book_genre(book_name) == ""
+    #проверка set_book_genre
+    def test_set_book_genre_atomic(self, collector):
+        book_name = "Тестовая"
+        collector.add_new_book(book_name)
+        collector.set_book_genre(book_name, "Фантастика")
+        assert collector.get_book_genre(book_name) == "Фактастика"
+
+    #проверка get_book_genre:
+    def test_get_book_genre_atomic(self, collector):
+        collector.add_new_book("Книга 1")
+        collector.set_book_genre("Книга 1", "Фантастика")
+        assert collector.get_book_genre("Книга 1") == "Фантастика"
+
+        collector.add_new_book("Книга 2")
+        assert collector.get_book_genre("Книга 2") == ""
+
+        assert collector.get_book_genre("Несуществующая") is None
 
     #Тесты для get_book_genre
     def test_get_book_genre_existing_book(self, collector):
@@ -149,12 +151,10 @@ class TestBooksCollector:
         assert book_name in collector.favorites
 
     #Тесты для delete_book_from_favorites
-    @pytest.mark.parametrize("Book_name", ["Масетр и Маргарита", "Преступление и наказание", "Собачье сердце"])
+    @pytest.mark.parametrize("book_name", ["Масетр и Маргарита", "Преступление и наказание", "Собачье сердце"])
     def test_delete_book_from_favorites_success(self, collector, book_name):
         collector.add_new_book(book_name)
         collector.add_book_in_favorites(book_name)
-        assert book_name in collector.favorites
-
         collector.delete_book_form_favorites(book_name)
         assert book_name not in collector.favorites
         
@@ -178,27 +178,80 @@ class TestBooksCollector:
     def test_get_list_of_favorites_books_empty(self, collector):
         assert collector.get_list_of_favorites_books() == []
 
-    #Комплексный тест
-    def test_full_workflow(self, collector):
+#общая проверка
+    #тесты для get_books_for_children
+    def test_get_books_for_children_includes_allowed_genre_books(self, collector):
         collector.add_new_book("Война и мир")
-        collector.add_new_book("Анна Каренина")
-        collector.add_new_book("Мертвые души")
-
         collector.set_book_genre("Война и мир", "Комедия")
-        collector.set_book_genre("Анна Каренина", "Фантастика")
-
         children_books = collector.get_books_for_children()
         assert "Война и мир" in children_books
-        assert "Анна Каренина" in children_books
+
+    def test_get_books_for_children_excludes_horror_books(self, collector):
+        collector.add_new_book("Оно")
+        collector.set_book_genre("Оно", "Ужасы")
+        children_books = collector.get_books_for_children()
+        assert "Оно" not in children_books
+
+    def test_get_books_for_children_excludes_detective_books(self, collector):
+        collector.add_new_book("Убийство в Восточном экспрессе")
+        collector.set_book_genre("Убийство в Восточном экспрессе", "Детективы")
+        children_books = collector.get_books_for_children()
+        assert "Убийство в Восточном экспрессе" not in children_books
+
+    def test_get_books_for_children_excludes_books_without_genre(self, collector):
+        collector.add_new_book("Мертвые души")
+        children_books = collector.get_books_for_children()
         assert "Мертвые души" not in children_books
 
+    #тесты для add_book_in_favorites
+    def test_add_book_in_favorites_increses_favorites_count(self, collector):
+        collector.add_new_book("Война и мир")
+        collector.add_new_book("Анна Каренина")
+        assert len(collector.get_lis_of_favorites_books()) == 2
+
+    def test_add_book_in_favorites_ignore_nonexistent_book(self, collector):
+        collector.add_new_book_in_favorites("Несуществующая")
+        assert len(collector.get_list_of_favorites_books()) == 0
+
+    #тесты для delete_book_from_favorites
+    def test_delete_book_fron_favorites_removes_specific_book(self, collector):
+        collector.add_new_book("Война и мир")
         collector.add_book_in_favorites("Война и мир")
+        collector.add_new_book("Анна Каренина")
         collector.add_book_in_favorites("Анна Каренина")
-        assert len(collector.get_list_of_favorites_books()) == 2
-
         collector.delete_book_from_favorites("Война и мир")
-        favorites = collector.get_list_of_favorites_books()
-        assert "Война и мир" not in favorites
-        assert "Анна Каренина" in favorites
+        assert "Война и мир" not in collector.get_list_of_favorites_books()
 
+    def test_delete_book_from_favorites_keeps_other_favorites(self, collector):
+        collector.add_new_book("Война и мир")
+        collector.add_book_in_favorites("Война и мир")
+        collector.add_new_book("Анна Каренина")
+        collector.add_book_in_favorites("Анна Каренина")
+        collector.delete_book_from_favorites("Война и мир")
+        assert "Анна Каренина" in collector.get_list_of_favorites_books()
+
+    def test_delete_book_from_favorites_handles_non_favorite_book(self, collector):
+        collector.add_new_book("Война и мир")
+        collector.delete_book_from_favorites("Война и мир")
+        assert collector.get_list_of_favorites_books() == []
+
+    #тесты для get_book_genre
+    def test_get_book_genre_persists_after_favorites_operations(self, collector):
+        collector.add_new_book("Война и мир")
+        collector.set_book_genre("Война и мир", "Комедия")
+        collector.add_new_book_in_favorites("Война и мир")
+        collector.delete_book_from_favorites("Война и мир")
+        assert collector.get_book_genre("Война и мир") == "Комедия"
+
+    def test_get_book_genre_unchanged_after_adding_to_favorites(self, collector):
+        collector.add_new_book("Война и мир")
+        collector.set_book_genre("Война и мир", "Комедия")
+        collector.add_book_in_favorites("Война и мир")
+        assert collector.get_book_genre("Война и мир") == "Комедия"
+
+    def test_get_book_genre_unchanged_after_deleting_from_favorites(self, collector):
+        collector.add_new_book("Война и мир")
+        collector.set_book_genre("Война и мир", "Комедия")
+        collector.add_book_in_favorites("Война и мир")
+        collector.delete_book_from_favorites("Война и мир")
         assert collector.get_book_genre("Война и мир") == "Комедия"
